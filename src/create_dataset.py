@@ -14,6 +14,7 @@ if __name__ == '__main__':
     parser.add_argument('-p', '--pages', type=int, default=1, help='Maximum number of pages to explore (0 : no limit). Use one to focus on a single one')
     parser.add_argument('-i', '--images', type=int, default=0, help='Maximum number of images to retrieve (0 : no limit)')
     parser.add_argument('-b', '--batch_size', type=int, default=1, help='The "batch" size: to process N by N pages and downloading data every Nth page (use 1 to download content only at the end).')
+    parser.add_argument('-P', '--processes', type=int, default=1, help='Number of processes for image downloads, experiment at your own risk.')
 
     # Output directory
     parser.add_argument('-D', '--directory', type=str, default='./data', help='Path to directory where images are stored')
@@ -31,16 +32,25 @@ if __name__ == '__main__':
     logging.basicConfig(level=args.loglevel)
     
     # Data gathering
-    dataset = WikiHowImages()
-    n_epochs = args.pages // args.batch_size
+    dataset = WikiHowImages(entrypoint=args.start)
     
-    for _ in tqdm(range(n_epochs)):
-        dataset.create_dataset(
-            max_pages=args.batch_size, start=args.start,
-            max_images=args.images
+    def run_batch(dataset, start):
+        return dataset.create_dataset(
+            start=start,
+            max_pages=args.batch_size,
+            max_images=max(1, args.images - len(dataset.images)) if args.images else 0
         ).download(
             rescale_to=args.rescale, 
             crop_to=(args.width, args.height), 
             to=args.directory,
-            processes=1
+            processes=args.processes
         )
+        
+    if args.pages:   
+        for _ in tqdm(range(args.pages // args.batch_size)):
+            dataset = run_batch(dataset, start=dataset.last_visited)
+    else:
+        while True:
+            dataset = run_batch(dataset, start=dataset.last_visited)
+            if not dataset.pages:
+                break
